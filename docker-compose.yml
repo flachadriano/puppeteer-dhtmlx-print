@@ -1,0 +1,10 @@
+version: '3'
+
+services:
+  download-img:
+    image: download-img
+    build: .
+    volumes:
+      - .:/usr/src/app
+    ports:
+      - "3003:3003"
