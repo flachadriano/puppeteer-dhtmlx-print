@@ -75,39 +75,58 @@ async function generatePdfFromUrl() {
    await changeElWidth(page, '.gantt_layout_x', `${width}px`);
    await changeElWidth(page, TIMELINE_CHART_CLASS, `${width}px`);
 
+   // change the height to extend the timeline to the whole content
    await changeElHeight(page, '.gantt_layout_root', `${height}px`);
    await changeElHeight(page, '.gantt_layout_x', `${height}px`);
    await changeElHeight(page, '.grid_cell', `${height}px`);
    await changeElHeight(page, '.grid_cell .gantt_layout_content', `${height}px`);
    await changeElHeight(page, '.gantt_grid', `${height}px`);
    await changeElHeight(page, '.gantt_grid_data', `${height}px`);
+   await changeElHeight(page, '.timeline_cell', `${height}px`);
+   await changeElHeight(page, '.timeline_cell .gantt_layout_content', `${height}px`);
+   await changeElHeight(page, '.gantt_task', `${height}px`);
+   await changeElHeight(page, '.gantt_data_area', `${height}px`);
+   await changeElHeight(page, '.gantt_task_bg', `${height}px`);
 
-   await page.screenshot({
-      path: `./output/${IMG_FILE}`,
-      clip: {
-         x: chartBBox.x,
-         y: chartBBox.y - 100,
-         width,
-         height: height
-      }
-   });
+   let images = 0;
+   const quantityImages = width / 10000;
+   const promises = [];
+   for (; images < quantityImages; images++) {
+      const outputFile = `./output/${images}-${IMG_FILE}`;
+      console.log('printing image', outputFile);
+      promises.push(page.screenshot({
+         path: outputFile,
+         clip: {
+            x: chartBBox.x + (images * 10000),
+            y: chartBBox.y - 100,
+            width: 10000,
+            height: height
+         }
+      }));
+   }
 
+   await Promise.all(promises);
    await browser.close();
 
-   printPdf(width, height);
+   printPdf(width, height, images);
 }
 
-async function printPdf(width, height) {
+async function printPdf(width, height, images) {
    PDFDocument = require('pdfkit');
    fs = require('fs');
 
    console.log('width =', width, ' height =', height);
    doc = new PDFDocument({
       size: [width + 150, height + 150] // 150 for margins
-   })
-   doc.pipe(fs.createWriteStream(`./output/${PDF_FILE}`))
-   doc.image(`./output/${IMG_FILE}`);
-   doc.end()
+   });
+   doc.pipe(fs.createWriteStream(`./output/${PDF_FILE}`));
+   for (let i = 0; i < images; i++) {
+      doc.image(`./output/${i}-${IMG_FILE}`, {
+         x: i * 10000,
+         y: 0
+      });
+   }
+   doc.end();
 }
 
 app.get('/img', async (req, res) => {

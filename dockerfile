@@ -25,4 +25,4 @@ COPY . .
 EXPOSE 3003
 
 # Inicia a aplicação
-CMD [ "npm", "start" ]
+CMD [ "npm", "run", "startts" ]
