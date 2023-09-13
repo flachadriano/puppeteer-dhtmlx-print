@@ -13,6 +13,25 @@ app.use(cors());
 const IMG_FILE = 'chart.jpg';
 const PDF_FILE = 'chart.pdf';
 
+// to endpoint https://dhtmlx.com/docs/products/dhtmlxGantt/01_basic.html
+// const CHART_ID = '#gantt_here';
+
+// to endpoint file:///usr/src/app/output/project.html
+const CHART_ID = '#gantt';
+
+const GRID_CHART_CLASS = '.gantt_layout_cell.grid_cell';
+const TIMELINE_CHART_CLASS = '.gantt_layout_cell.timeline_cell';
+
+async function changeElWidth(page, cssClass, newWidth) {
+   let el = await page.$(cssClass);
+   await el.evaluate((el, newWidth) => el.style.width = newWidth, newWidth);
+}
+
+async function changeElHeight(page, cssClass, newHeight) {
+   let el = await page.$(cssClass);
+   await el.evaluate((el, newHeight) => el.style.height = newHeight, newHeight);
+}
+
 async function generatePdfFromUrl() {
    const browser = await puppeteer.launch({
       executablePath: '/usr/bin/google-chrome',
@@ -22,40 +41,54 @@ async function generatePdfFromUrl() {
    // render page
    const page = await browser.newPage();
    await page.goto(baseUrl);
-   await page.waitForTimeout(5000);
+   await page.waitForTimeout(2000);
 
    // get sizes of the full chart, to use the height
-   const chartEl = await page.$('#gantt_here');
-   await chartEl.evaluate(el => el.style.height = '100%');
+   const chartEl = await page.$(CHART_ID);
+   await changeElHeight(page, CHART_ID, '100%')
    const chartBBox = await chartEl.boundingBox();
 
    // get sizes of left column of chart to use the width
-   const columnLeftEl = await page.$('.gantt_layout_cell.grid_cell');
-   const columnLeftBBox = columnLeftEl && await columnLeftEl.boundingBox();
+   const gridEl = await page.$(GRID_CHART_CLASS);
+   const gridBBox = await gridEl.boundingBox();
 
    // get sizes of the timeline of chart to use the width
-   const columnRightEl = await page.$('.gantt_layout_cell.timeline_cell');
-   await columnRightEl.evaluate(el => el.style.width = '');
-   const columnRightBBox = columnRightEl && await columnRightEl.boundingBox();
+   const timelineEl = await page.$(TIMELINE_CHART_CLASS);
+   await changeElWidth(page, TIMELINE_CHART_CLASS, '');
+   const timelineBBox = await timelineEl.boundingBox();
 
-   console.log('bbox', columnLeftBBox, columnRightBBox, chartBBox);
+   const contentEl = await page.$('.gantt_task_bg');
+   const contentBBox = await contentEl.boundingBox();
 
-   const width = columnLeftBBox.width + columnRightBBox.width;
-   const height = chartBBox.height;
+   console.log('bbox');
+   console.log('chart', chartBBox);
+   console.log('grid', gridBBox);
+   console.log('timeline', timelineBBox);
 
-   page.setViewport({
-      width,
-      height,
-      deviceScaleFactor: 1
-   });
+   const width = gridBBox.width + timelineBBox.width;
+   const height = contentBBox.height;
+
+   await page.setViewport({ width, height, deviceScaleFactor: 1 });
+
+   // change the width to extend the timeline to the whole content
+   await changeElWidth(page, '.gantt_layout_root', `${width}px`);
+   await changeElWidth(page, '.gantt_layout_x', `${width}px`);
+   await changeElWidth(page, TIMELINE_CHART_CLASS, `${width}px`);
+
+   await changeElHeight(page, '.gantt_layout_root', `${height}px`);
+   await changeElHeight(page, '.gantt_layout_x', `${height}px`);
+   await changeElHeight(page, '.grid_cell', `${height}px`);
+   await changeElHeight(page, '.grid_cell .gantt_layout_content', `${height}px`);
+   await changeElHeight(page, '.gantt_grid', `${height}px`);
+   await changeElHeight(page, '.gantt_grid_data', `${height}px`);
 
    await page.screenshot({
-      path: IMG_FILE,
+      path: `./output/${IMG_FILE}`,
       clip: {
-         x: 0,
-         y: 0,
+         x: chartBBox.x,
+         y: chartBBox.y - 100,
          width,
-         height
+         height: height
       }
    });
 
@@ -68,19 +101,19 @@ async function printPdf(width, height) {
    PDFDocument = require('pdfkit');
    fs = require('fs');
 
-   console.log('height, width', height, width);
+   console.log('width =', width, ' height =', height);
    doc = new PDFDocument({
       size: [width + 150, height + 150] // 150 for margins
    })
-   doc.pipe(fs.createWriteStream(`./${PDF_FILE}`))
-   doc.image(IMG_FILE);
+   doc.pipe(fs.createWriteStream(`./output/${PDF_FILE}`))
+   doc.image(`./output/${IMG_FILE}`);
    doc.end()
 }
 
 app.get('/img', async (req, res) => {
    try {
       await generatePdfFromUrl();
-      res.download(`./${PDF_FILE}`, PDF_FILE, (err) => {
+      res.download(`./output/${PDF_FILE}`, PDF_FILE, (err) => {
          if (err) {
             console.error(`Error sending IMG to client: ${err}`);
          } else {
