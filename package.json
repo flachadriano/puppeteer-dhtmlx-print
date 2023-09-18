@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "startts": "ts-node index.ts",
+    "start-ts": "ts-node index.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -25,10 +25,11 @@
     "pdfkit": "^0.13.0",
     "puppeteer": "^19.7.1",
     "ts-node": "^10.9.1",
-    "ts-node-dev": "^2.0.0",
     "typescript": "^5.2.2"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.14",
+    "@types/express": "^4.17.17",
     "@types/pdfkit": "^0.12.10"
   }
 }
