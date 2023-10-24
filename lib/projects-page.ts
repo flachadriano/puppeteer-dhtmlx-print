@@ -25,8 +25,9 @@ export async function accessProjectPage(signedInPage: Page, projectId: number) {
     });
     
     console.log('waiting to load planning page');
-    await signedInPage.waitForSelector('div[aria-label=Tipo]');
-    //await signedInPage.waitForTimeout(180000);
+    try {
+        await signedInPage.waitForSelector('div[aria-label=Tipo]', { timeout: 210000 });
+    } catch {}
 
     await signedInPage.screenshot({
         path: './output/loaded-project.png',

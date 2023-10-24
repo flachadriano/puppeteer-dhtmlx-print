@@ -1,6 +1,7 @@
 import PDFDocument from "pdfkit";
 import fs from 'fs';
 import { Page } from "puppeteer";
+import VARIABLES from "./variables";
 
 const IMG_FILE = 'chart.jpg';
 const PDF_FILE = 'chart.pdf';
@@ -28,6 +29,8 @@ interface PreparedPageData {
    chartHeight: number;
    widthImages?: number;
    heightImages?: number;
+   pageWidth?: number;
+   pageHeight?: number;
 }
 
 export async function getChartProperties(signedInPage: Page): Promise<PreparedPageData> {
@@ -61,21 +64,7 @@ export async function getChartProperties(signedInPage: Page): Promise<PreparedPa
    });
 }
 
-export async function printGanttImages(signedInPage: Page, pageData: PreparedPageData) {
-   console.log('--> starting print chart images');
-   console.log('pageData', pageData);
-
-   await changeElWidth(signedInPage, CHART_ID, `${pageData.chartWidth}px`);
-   await changeElHeight(signedInPage, CHART_ID, `${pageData.chartHeight}px`);
-
-   await signedInPage.setViewport({
-      width: pageData.chartWidth,
-      height: pageData.chartHeight,
-      deviceScaleFactor: 1
-   });
-
-   await signedInPage.waitForTimeout(10000);
-
+async function printGanttImagesFullPageWide(signedInPage: Page, pageData: PreparedPageData) {
    const widthCut = IMAGE_SEGMENT_PX;
    const heightCut = IMAGE_SEGMENT_PX;
    const widthImages = pageData.chartWidth / widthCut;
@@ -98,6 +87,72 @@ export async function printGanttImages(signedInPage: Page, pageData: PreparedPag
             }
          });
       }
+   }
+}
+
+async function printChart(signedInPage: Page, outputPath: string, x: number, y: number, width: number, height: number): Promise<boolean> {
+   try {
+      await signedInPage.screenshot({
+         path: outputPath,
+         clip: { x, y, width, height }
+      });
+      return true;
+   } catch {
+      return false;
+   }
+}
+
+async function printGanttImagesScroll(signedInPage: Page, pageData: PreparedPageData) {
+   const widthCut = VARIABLES.PAGE_PRINT_WIDTH;
+   const heightCut = VARIABLES.PAGE_PRINT_HEIGHT;
+   const widthImages = pageData.chartWidth / widthCut;
+   const heightImages = pageData.chartHeight / heightCut;
+
+   pageData.widthImages = widthImages;
+   pageData.heightImages = heightImages;
+
+   const chartScrollbarEl = await signedInPage.$(VARIABLES.CHART_HORIZONTAL_SCROLL_CLASS);
+
+   if (!chartScrollbarEl) {
+      throw Error('Chart horizontal scroll bar not found');
+   }
+
+   for (let heightIndex = 0; heightIndex < heightImages; heightIndex++) {
+      for (let widthIndex = 0; widthIndex < widthImages; widthIndex++) {
+         const outputFile = `./output/${widthIndex}-${heightIndex}-${IMG_FILE}`;
+         console.log('printing image', outputFile, widthImages);
+
+         await chartScrollbarEl.evaluate((el: any, newWidth) => el.scrollLeft = newWidth, widthCut * widthIndex);
+         await signedInPage.waitForTimeout(1000);
+
+         for (let i = 0; i < 5; i++) {
+            const printed = await printChart(signedInPage, outputFile, pageData.startedX, pageData.startedY, widthCut, heightCut);
+            if (printed) break;
+            console.log('tried ', i);
+            
+         }
+      }
+   }
+}
+
+export async function printGanttImages(signedInPage: Page, pageData: PreparedPageData) {
+   console.log('--> starting print chart images');
+   console.log('pageData', pageData);
+
+   await changeElWidth(signedInPage, CHART_ID, `${pageData.pageWidth || pageData.chartWidth}px`);
+   await changeElHeight(signedInPage, CHART_ID, `${pageData.pageHeight || pageData.chartHeight}px`);
+
+   await signedInPage.setViewport({
+      width: pageData.chartWidth,
+      height: pageData.chartHeight,
+      deviceScaleFactor: 1
+   });
+
+   if (pageData.pageWidth) {
+      printGanttImagesScroll(signedInPage, pageData);
+   } else {
+      printGanttImagesFullPageWide(signedInPage, pageData);
+      await signedInPage.waitForTimeout(10000);
    }
 
    console.log('--> all gantt chart images printed');
