@@ -1,4 +1,5 @@
 import { Page } from "puppeteer";
+import Print from "./print";
 
 export async function accessProjectsPage(page: Page) {
     await page.$eval('button[aria-label=menu]', el => el.click());
@@ -29,10 +30,7 @@ export async function accessProjectPage(signedInPage: Page, projectId: number) {
         await signedInPage.waitForSelector('div[aria-label=Tipo]', { timeout: 210000 });
     } catch {}
 
-    await signedInPage.screenshot({
-        path: './output/loaded-project.png',
-        clip: { x: 0, y: 0, width: 2000, height: 2000 }
-     });
+    Print.wholePage(signedInPage);
 
     console.log('--> project planning page with loaded gantt chart is ready');
 }

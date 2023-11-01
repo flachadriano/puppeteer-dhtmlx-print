@@ -32,23 +32,26 @@ app.get('/project/:id', async (req: Request, res: Response) => {
       console.log('-->>> ended project printing', new Date().toISOString());
    }
 });
-
+// 9
 // small chart with: 46
-// vertical scroll: 2
+// vertical scroll: 21 (3797x4182)
+// horizontal scroll: 51 (7360x3282)
+// both scrolls: 58 (27142x92780)
 // big chart with: 49
 app.get('/project-scroll/:id', async (req: Request, res: Response) => {
-   console.log('-->>> start project printing', new Date().toISOString());   
+   const startProcessing: any = new Date();
+   console.log('-->>> start project printing', startProcessing.toISOString());   
    const browser = await getNewInstance();
    try {
       const signedInPage = await getNewSignedInPage(browser);
       const projectId = +req.params.id;
       await accessProjectPage(signedInPage, projectId);
-      let pageData = await getChartProperties(signedInPage);
-      await printGanttScroll(signedInPage, pageData.chartWidth, pageData.chartHeight);
+      await printGanttScroll(signedInPage);
    } finally {
       await browser.close();
       res.status(200).json({ message: 'success' });
-      console.log('-->>> ended project printing', new Date().toISOString());
+      const endProcessing: any = new Date();
+      console.log('-->>> ended project printing', endProcessing.toISOString(), '-', Math.ceil(Math.abs(endProcessing - startProcessing) / 1000), 's');
    }
 });
 

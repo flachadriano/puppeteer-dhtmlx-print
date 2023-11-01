@@ -1,28 +1,28 @@
-import fs from 'fs';
-import PDFDocument from 'pdfkit';
 import { Page } from 'puppeteer';
 import VARIABLES from './variables';
 import Gantt from './gantt';
+import Print from './print';
+import PDF from './pdf';
 
-export async function printGanttScroll(signedInPage: Page, chartWidth: number, chartHeight: number) {
+export async function printGanttScroll(signedInPage: Page) {
   await signedInPage.setViewport({
     width: VARIABLES.BROWSER_PAGE_WIDTH,
     height: VARIABLES.BROWSER_PAGE_HEIGHT,
     deviceScaleFactor: 1
   });
-  console.log('changed browser dimensions to ', VARIABLES.BROWSER_PAGE_WIDTH, 'x', VARIABLES.BROWSER_PAGE_HEIGHT);
+  console.log('changed browser dimensions to', VARIABLES.BROWSER_PAGE_WIDTH, 'x', VARIABLES.BROWSER_PAGE_HEIGHT);
   await signedInPage.waitForTimeout(1000);
 
-  await signedInPage.screenshot({
-    path: './output/loaded-project-scroll.png',
-    clip: { x: 0, y: 0, width: VARIABLES.BROWSER_PAGE_WIDTH, height: VARIABLES.BROWSER_PAGE_HEIGHT }
- });
+  Print.wholePage(signedInPage);
 
   const gridEl: any = await signedInPage.$(VARIABLES.CHART_TASK_TITLE_CLASS);
   const gridBbox: any = await gridEl.boundingBox();
   
-  const lines = chartHeight / VARIABLES.PAGE_PRINT_HEIGHT;
-  const columns = chartWidth / VARIABLES.PAGE_PRINT_WIDTH;
+  const width = await Gantt.getWidth(signedInPage);
+  const height = await Gantt.getHeight(signedInPage)
+  const lines = await Gantt.getLinesToPrint(signedInPage);
+  const columns = await Gantt.getColumnsToPrint(signedInPage);
+  console.log('chart dimensions:', width, 'x', height);
   console.log('lines', lines, 'columns', columns);
 
   const chartVerticalScrollbarEl = await signedInPage.$(VARIABLES.CHART_VERTICAL_SCROLL_CLASS);
@@ -31,80 +31,76 @@ export async function printGanttScroll(signedInPage: Page, chartWidth: number, c
   // the chart can be viewed without scroll
   if (!chartVerticalScrollbarEl && !chartHorizontalScrollbarEl) {
     console.log('not scroll bars');
-    
+    const el: any = await signedInPage.$('#gantt');
+    const elBbox = await el.boundingBox();
+    signedInPage.waitForTimeout(300);
+
     await signedInPage.screenshot({
       path: `${VARIABLES.PRINT_PARTIAL_PATH}0.jpg`,
       clip: {
-        x: VARIABLES.CHART_START_POSITION_X,
-        y: VARIABLES.CHART_START_POSITION_y - 50,
+        x: elBbox.x,
+        y: elBbox.y,
         width: VARIABLES.PAGE_PRINT_WIDTH,
         height: VARIABLES.PAGE_PRINT_HEIGHT
       }
     });
-    await generatePdf(signedInPage, 1, 0, 0);
+    await PDF.generatePdf(signedInPage, 1, 0, 0);
 
   } else if (!chartVerticalScrollbarEl) {
     console.log('not vertical scroll bar');
     await generateScreenshots(signedInPage, 1, columns);
-    await generatePdf(signedInPage, 1, columns, gridBbox.width);
+    await PDF.generatePdf(signedInPage, 1, columns, gridBbox.width);
 
   } else if (!chartHorizontalScrollbarEl) {
     console.log('with vertical scroll bar and not horizontal scroll bar');
     await generateScreenshots(signedInPage, lines, 1);
-    await generatePdf(signedInPage, lines, 1, gridBbox.width);
+    await PDF.generatePdf(signedInPage, lines, 1, gridBbox.width);
 
   } else {
     console.log('all scroll bars');
     await generateScreenshots(signedInPage, lines, columns);
-    await generatePdf(signedInPage, lines, columns, gridBbox.width);
+    await PDF.generatePdf(signedInPage, lines, columns, gridBbox.width);
   }
 }
 
 async function generateScreenshots(signedInPage: Page, lines: number, columns: number) {
-  console.log('--> printing');
+  console.log('--> printing', new Date().toISOString());
   
-  const chartVerticalScrollbarEl = await signedInPage.$(VARIABLES.CHART_VERTICAL_SCROLL_CLASS);
+  const ganttInfo = await Gantt.getChartInfo(signedInPage);
   const chartHorizontalScrollbarEl = await signedInPage.$(VARIABLES.CHART_HORIZONTAL_SCROLL_CLASS);
+  const chartVerticalScrollbarEl = await signedInPage.$(VARIABLES.CHART_VERTICAL_SCROLL_CLASS);
+  const widthScroll = await Gantt.getVisibleTimelineWidth(signedInPage);
+  console.log('widthScroll', widthScroll);
+  const heightScroll = ganttInfo.height - VARIABLES.CHART_HEADER_HEIGHT - VARIABLES.CHART_BOTTOM_BORDER;
+  console.log('heightScroll', heightScroll);
 
   for (let lineIndex = 0; lineIndex < lines; lineIndex++) {
-    chartVerticalScrollbarEl && await chartVerticalScrollbarEl.evaluate((el: any, newPosition) => el.scrollTop = newPosition, VARIABLES.PAGE_PRINT_HEIGHT * lineIndex);
     chartHorizontalScrollbarEl && await chartHorizontalScrollbarEl.evaluate((el: any, newPosition) => el.scrollLeft = newPosition, 0);
-    await Gantt.printGridTitle(signedInPage, lineIndex);
 
-    for (let columnIndex = 0; columnIndex < columns; columnIndex++) {
-      chartHorizontalScrollbarEl && await chartHorizontalScrollbarEl.evaluate((el: any, newWidth) => el.scrollLeft = newWidth, VARIABLES.PAGE_PRINT_WIDTH * columnIndex);
-      await Gantt.printTimeline(signedInPage, lineIndex, columnIndex);
+    if (lineIndex + 1 > lines) {
+      await Gantt.printGridTItleLastLine(signedInPage, ganttInfo.x, ganttInfo.y, lineIndex, lines);
+    } else {
+      await Gantt.printGridTitle(signedInPage, ganttInfo.x, ganttInfo.y, lineIndex);
     }
-  }
-}
-
-async function generatePdf(signedInPage: Page, lines: number, columns: number, gridTitleWidth: number) {
-  console.log('--> exporting pdf');
-  
-  const width = await Gantt.getWidth(signedInPage);
-  const height = await Gantt.getHeight(signedInPage);
-  const doc = new PDFDocument({
-    size: [width, height]
-  });
-  doc.pipe(fs.createWriteStream(VARIABLES.PDF_PATH));
-  console.log('created pdf', VARIABLES.PDF_PATH, 'dimensions', width, 'x', height);
-  
-  const chartHeightImg = await Gantt.getVisibleHeight(signedInPage);
-  let positionY = 0;
-
-  for (let lineIndex = 0; lineIndex < lines; lineIndex++) {
-    let positionX = gridTitleWidth;
-    console.log('printing title on pdf', lineIndex, '-', 0, 'x', positionY);
-    doc.image(`${VARIABLES.PRINT_PARTIAL_PATH}${lineIndex}.jpg`, 0, positionY);
     
     for (let columnIndex = 0; columnIndex < columns; columnIndex++) {
-      console.log('printing image on pdf', lineIndex, columnIndex, '-', positionX, 'x', positionY);
-      doc.image(`${VARIABLES.PRINT_PARTIAL_PATH}${lineIndex}-${columnIndex}.jpg`, positionX, positionY);
-      positionX += VARIABLES.PAGE_PRINT_WIDTH;
+      Print.wholePageVar(signedInPage, `${lineIndex}-${columnIndex}`);
+
+      if (lineIndex + 1 > lines) {
+        if (columnIndex + 1 > columns) {
+          await Gantt.printTimelineLastLineColumn(signedInPage, ganttInfo.x, ganttInfo.y, lineIndex, columnIndex, lines, columns);
+        } else {
+          await Gantt.printTimelineLastLine(signedInPage, ganttInfo.x, ganttInfo.y, lineIndex, columnIndex, lines);
+        }
+      } else if (columnIndex + 1 > columns) {
+        await Gantt.printTimelineLastColumn(signedInPage, ganttInfo.x, ganttInfo.y, lineIndex, columnIndex, columns);
+      } else {
+        await Gantt.printTimeline(signedInPage, ganttInfo.x, ganttInfo.y, lineIndex, columnIndex);
+      }
+
+      chartHorizontalScrollbarEl && await chartHorizontalScrollbarEl.evaluate((el: any, w) => el.scrollLeft = parseInt(el.scrollLeft, 10) + w, widthScroll - VARIABLES.CHART_RIGHT_BORDER - VARIABLES.CHART_WIDTH_MARGIN);
     }
 
-    positionY += chartHeightImg;
+    chartVerticalScrollbarEl && await chartVerticalScrollbarEl.evaluate((el: any, h) => el.scrollTop = parseInt(el.scrollTop, 10) + h, heightScroll);
   }
-
-  doc.end();
 }
